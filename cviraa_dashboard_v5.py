@@ -1166,13 +1166,20 @@ else:
         b_df = st.session_state.billeting_df
         p_df = st.session_state.participants_df
         
+        selected_participant_from_scan = None
+        
+        # Check if URL parameter provided an ID from direct smartphone camera scan
+        if scanned_url_id:
+            matched_url_p = p_df[p_df["Accreditation_ID"].str.upper() == scanned_url_id.upper()]
+            if not matched_url_p.empty:
+                selected_participant_from_scan = matched_url_p.iloc[0]
+                st.success(f"📱 **QR CODE SCANNED FROM PHONE CAMERA**: Found **{selected_participant_from_scan['Full_Name']}** (`{selected_participant_from_scan['Accreditation_ID']}`)!")
+        
         log_mode1, log_mode2, log_mode3 = st.tabs([
             "📱 Mobile Phone Camera QR Scanner", 
             "📟 USB / Bluetooth Scanner Gun", 
             "📝 Manual Dropdown Input"
         ])
-        
-        selected_participant_from_scan = None
         
         with log_mode1:
             st.markdown("#### 📱 Mobile Phone & Tablet Camera QR Scanner")
@@ -1229,7 +1236,19 @@ else:
         if selected_participant_from_scan is not None:
             p_rec = selected_participant_from_scan
             
-            st.markdown("### 👤 Participant Log Profile")
+            # Determine current status based on last log
+            p_history = b_df[b_df["Accreditation_ID"] == p_rec["Accreditation_ID"]]
+            last_action_str = "No Movement History (In Quarters)"
+            default_action_idx = 0 # Default to Log OUT if no history or in quarters
+            if not p_history.empty:
+                last_log_entry = p_history.iloc[-1]
+                last_action_str = f"{last_log_entry['Action']} at {last_log_entry['Timestamp']}"
+                if "Log OUT" in last_log_entry["Action"]:
+                    default_action_idx = 0 # Next expected action is Log IN
+                else:
+                    default_action_idx = 1 # Next expected action is Log OUT
+
+            st.markdown("### 👤 Participant Scan Profile & Current Status")
             col_p1, col_p2 = st.columns([7, 3])
             
             with col_p1:
@@ -1237,25 +1256,69 @@ else:
                     **Full Name**: {p_rec['Full_Name']}<br/>
                     **Accreditation ID**: `{p_rec['Accreditation_ID']}`<br/>
                     **Role**: **{p_rec['Role']}** | **Division**: {p_rec['Division']}<br/>
-                    **Sport / Committee**: {p_rec['Sport_or_Committee']}
+                    **Sport / Committee**: {p_rec['Sport_or_Committee']}<br/>
+                    **Last Recorded Status**: `{last_action_str}`
                 """, icon="📇")
             
             with col_p2:
                 svg_qr = get_qr_svg_string(p_rec['Accreditation_ID'], size=130)
                 st.markdown(f'<div style="text-align:center;background:white;padding:10px;border-radius:10px;border:1px solid #E5E7EB">{svg_qr}</div>', unsafe_allow_html=True)
             
-            st.markdown("#### 📝 Movement Action Record")
+            st.markdown("#### ⚡ 1-Tap Quick Log Actions")
+            col_q1, col_q2 = st.columns(2)
+            
+            with col_q1:
+                if st.button("🟢 QUICK LOG IN (Returned to Quarters)", use_container_width=True, type="primary" if default_action_idx==0 else "secondary"):
+                    q_log = {
+                        "Log_ID": f"LOG-{1000 + len(b_df) + 1}",
+                        "Timestamp": get_manila_now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "Accreditation_ID": p_rec["Accreditation_ID"],
+                        "Full_Name": p_rec["Full_Name"],
+                        "Division": p_rec["Division"],
+                        "Quarter": BILLETING_QUARTERS[0],
+                        "Action": "Log IN (Returned to Quarters)",
+                        "Destination_Reason": "Returned to Billeting School",
+                        "Officer_In_Charge": "Duty Gate Guard"
+                    }
+                    b_updated = pd.concat([b_df, pd.DataFrame([q_log])], ignore_index=True)
+                    st.session_state.billeting_df = b_updated
+                    save_billeting_data(b_updated)
+                    st.success(f"✅ INSTANT LOGGED **{p_rec['Full_Name']}**: Log IN at {q_log['Timestamp']}!")
+                    st.rerun()
+                    
+            with col_q2:
+                if st.button("🔴 QUICK LOG OUT (Left for Venue)", use_container_width=True, type="primary" if default_action_idx==1 else "secondary"):
+                    q_log = {
+                        "Log_ID": f"LOG-{1000 + len(b_df) + 1}",
+                        "Timestamp": get_manila_now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "Accreditation_ID": p_rec["Accreditation_ID"],
+                        "Full_Name": p_rec["Full_Name"],
+                        "Division": p_rec["Division"],
+                        "Quarter": BILLETING_QUARTERS[0],
+                        "Action": "Log OUT (Left for Venue)",
+                        "Destination_Reason": "Playing Venue Match / Official Task",
+                        "Officer_In_Charge": "Duty Gate Guard"
+                    }
+                    b_updated = pd.concat([b_df, pd.DataFrame([q_log])], ignore_index=True)
+                    st.session_state.billeting_df = b_updated
+                    save_billeting_data(b_updated)
+                    send_telegram_message(f"🚨 <b>BILLETING LOG-OUT ALERT</b>\nParticipant <b>{p_rec['Full_Name']}</b> ({p_rec['Division']}) departed for Playing Venue at {q_log['Timestamp']}.")
+                    st.success(f"✅ INSTANT LOGGED **{p_rec['Full_Name']}**: Log OUT at {q_log['Timestamp']}!")
+                    st.rerun()
+
+            st.markdown("<hr/>", unsafe_allow_html=True)
+            st.markdown("#### 📝 Custom Movement Details Record")
             col_act1, col_act2 = st.columns(2)
             
             with col_act1:
-                sel_action = st.radio("Select Movement Direction", ["Log IN (Returned to Quarters)", "Log OUT (Left for Venue)"], horizontal=True, key="log_action_choice")
+                sel_action = st.radio("Select Movement Direction", ["Log IN (Returned to Quarters)", "Log OUT (Left for Venue)"], index=default_action_idx, horizontal=True, key="log_action_choice")
                 sel_quarter = st.selectbox("Assigned Billeting School", BILLETING_QUARTERS, key="log_quarter_choice")
             
             with col_act2:
                 dest_reason = st.text_input("Destination / Sport Venue / Reason", value="Playing Venue Match / Official Task", key="log_dest_field")
                 officer_ic = st.text_input("Gate Security Officer / Chaperone Duty", value="Security Officer", key="log_officer_field")
             
-            if st.button("💾 Submit Movement Log Entry", use_container_width=True, key="save_log_btn"):
+            if st.button("💾 Submit Detailed Movement Log Entry", use_container_width=True, key="save_log_btn"):
                 new_log = {
                     "Log_ID": f"LOG-{1000 + len(b_df) + 1}",
                     "Timestamp": get_manila_now().strftime("%Y-%m-%d %H:%M:%S"),
