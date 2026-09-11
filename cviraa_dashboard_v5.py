@@ -20,7 +20,12 @@ from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.barcode.qr import QrCodeWidget
 from reportlab.graphics import renderSVG
 from reportlab.platypus import PageBreak
-import cv2
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    cv2 = None
+    CV2_AVAILABLE = False
 
 # Set page configuration
 st.set_page_config(
@@ -285,6 +290,20 @@ def load_billeting_data():
 
 def save_billeting_data(df):
     df.to_csv(BILLETING_CSV, index=False)
+
+
+def extract_accreditation_id(scanned_text):
+    if not scanned_text:
+        return ""
+    text = scanned_text.strip()
+    if "?id=" in text:
+        parsed = urllib.parse.urlparse(text)
+        params = urllib.parse.parse_qs(parsed.query)
+        if "id" in params:
+            return params["id"][0].upper()
+    if text.startswith("http://") or text.startswith("https://"):
+        text = text.split("/")[-1]
+    return text.upper()
 
 def calculate_ranking(df, sort_mode="Olympic Standard (Gold First)"):
     if df.empty:
@@ -1165,7 +1184,7 @@ else:
                     decoded_id, pts, _ = detector.detectAndDecode(img)
                     
                     if decoded_id and decoded_id.strip():
-                        scanned_code = decoded_id.strip().upper()
+                        scanned_code = extract_accreditation_id(decoded_id)
                         st.success(f"🎉 **QR CODE SCANNED SUCCESSFULLY**: `{scanned_code}`")
                         matched_cam_p = p_df[p_df["Accreditation_ID"].str.upper() == scanned_code]
                         if not matched_cam_p.empty:
@@ -1183,7 +1202,8 @@ else:
             
             scanned_gun_id = st.text_input("📷 Scan Barcode / QR Code", placeholder="e.g. CV26-ATH-1001", key="gun_scanner_field").strip()
             if scanned_gun_id:
-                matched_gun_p = p_df[p_df["Accreditation_ID"].str.upper() == scanned_gun_id.upper()]
+                clean_gun_id = extract_accreditation_id(scanned_gun_id)
+                matched_gun_p = p_df[p_df["Accreditation_ID"].str.upper() == clean_gun_id.upper()]
                 if not matched_gun_p.empty:
                     selected_participant_from_scan = matched_gun_p.iloc[0]
                 else:
