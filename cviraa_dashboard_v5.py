@@ -16,6 +16,11 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.pdfbase import pdfmetrics
+from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.barcode.qr import QrCodeWidget
+from reportlab.graphics import renderSVG
+from reportlab.platypus import PageBreak
+import cv2
 
 # Set page configuration
 st.set_page_config(
@@ -255,7 +260,8 @@ def load_participants_data():
             {"Accreditation_ID": "CV26-ATH-1002", "Full_Name": "Maria Santos", "Role": "Athlete / Player", "Division": "Bohol Province", "Category": "Elementary", "Sport_or_Committee": "Athletics", "Gender": "Female", "Status": "Verified"},
             {"Accreditation_ID": "CV26-CCH-2001", "Full_Name": "Coach Roberto Gomez", "Role": "Coach", "Division": "Cebu City", "Category": "Secondary", "Sport_or_Committee": "Swimming", "Gender": "Male", "Status": "Verified"},
             {"Accreditation_ID": "CV26-TWG-3001", "Full_Name": "Dr. Arlene Cañete", "Role": "TWG Member", "Division": "DepEd Regional Office VII", "Category": "Regional TWG", "Sport_or_Committee": "Medical & First Aid TWG", "Gender": "Female", "Status": "Verified"},
-            {"Accreditation_ID": "CV26-TWG-3002", "Full_Name": "Engr. Mark Yap", "Role": "TWG Member", "Division": "City of Naga (Host TWG)", "Category": "Host TWG", "Sport_or_Committee": "Secretariat & Records TWG", "Gender": "Male", "Status": "Verified"}
+            {"Accreditation_ID": "CV26-TWG-3002", "Full_Name": "Engr. Mark Yap", "Role": "TWG Member", "Division": "City of Naga (Host TWG)", "Category": "Host TWG", "Sport_or_Committee": "Secretariat & Records TWG", "Gender": "Male", "Status": "Verified"},
+            {"Accreditation_ID": "CV26-CHP-3003", "Full_Name": "Elena Torralba", "Role": "Chaperone", "Division": "Tagbilaran City", "Category": "Elementary", "Sport_or_Committee": "Badminton", "Gender": "Female", "Status": "Verified"}
         ]
         df = pd.DataFrame(records)
         df.to_csv(PARTICIPANTS_CSV, index=False)
@@ -317,6 +323,177 @@ def calculate_ranking(df, sort_mode="Olympic Standard (Gold First)"):
 
 
 # 📄 PDF EXECUTIVE SUMMARY REPORT GENERATOR (Publication-Quality for Regional Directors)
+
+def get_qr_svg_string(text, size=180):
+    """Generates pure SVG XML string for a scannable QR code."""
+    try:
+        qr_w = QrCodeWidget(str(text))
+        bounds = qr_w.getBounds()
+        w = bounds[2] - bounds[0]
+        h = bounds[3] - bounds[1]
+        d = Drawing(size, size, transform=[size/w, 0, 0, size/h, 0, 0])
+        d.add(qr_w)
+        svg_str = renderSVG.drawToString(d)
+        return svg_str
+    except Exception:
+        return f'<img src="https://quickchart.io/qr?text={text}&size={size}" width="{size}" height="{size}"/>'
+
+def generate_qr_drawing(text, size=80):
+    """Generates ReportLab Drawing object with a vector QR Code."""
+    qr_w = QrCodeWidget(str(text))
+    bounds = qr_w.getBounds()
+    w = bounds[2] - bounds[0]
+    h = bounds[3] - bounds[1]
+    d = Drawing(size, size, transform=[size/w, 0, 0, size/h, 0, 0])
+    d.add(qr_w)
+    return d
+
+def make_single_accreditation_pass_pdf(p_row):
+    """Generates a printable PDF Accreditation Pass with QR code for a single participant."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=LETTER, leftMargin=54, rightMargin=54, topMargin=54, bottomMargin=54)
+    story = []
+    
+    NAVY = HexColor('#1E3A8A')
+    GOLD = HexColor('#F59E0B')
+    DARK_GRAY = HexColor('#374151')
+    LIGHT_BG = HexColor('#F9FAFB')
+    
+    role_str = str(p_row.get('Role', 'Participant')).upper()
+    role_color = NAVY
+    if 'COACH' in role_str:
+        role_color = HexColor('#059669') # Emerald
+    elif 'CHAPERONE' in role_str:
+        role_color = HexColor('#7C3AED') # Purple
+    elif 'TWG' in role_str:
+        role_color = HexColor('#D97706') # Amber Gold
+        
+    title_style = ParagraphStyle('TStyle', fontName='Helvetica-Bold', fontSize=12, leading=14, textColor=NAVY, alignment=TA_CENTER)
+    sub_style = ParagraphStyle('SStyle', fontName='Helvetica-Bold', fontSize=10, leading=12, textColor=role_color, alignment=TA_CENTER)
+    name_style = ParagraphStyle('NStyle', fontName='Helvetica-Bold', fontSize=16, leading=18, textColor=NAVY, alignment=TA_CENTER)
+    meta_style = ParagraphStyle('MStyle', fontName='Helvetica', fontSize=10, leading=12, textColor=DARK_GRAY, alignment=TA_CENTER)
+    id_style = ParagraphStyle('IDStyle', fontName='Helvetica-Bold', fontSize=12, leading=14, textColor=NAVY, alignment=TA_CENTER)
+    
+    qr_draw = generate_qr_drawing(p_row['Accreditation_ID'], size=100)
+    
+    card_content = [
+        Paragraph('<b>DEPARTMENT OF EDUCATION • REGION VII</b>', title_style),
+        Paragraph('CVIRAA REGIONAL ATHLETIC MEET 2026', meta_style),
+        HRFlowable(width="100%", thickness=1.5, color=role_color, spaceBefore=4, spaceAfter=8),
+        Paragraph(f'<b>OFFICIAL {role_str} PASS</b>', sub_style),
+        Spacer(1, 10),
+        Paragraph(f'<b>{p_row["Full_Name"]}</b>', name_style),
+        Spacer(1, 4),
+        Paragraph(f'<b>Division:</b> {p_row["Division"]}', meta_style),
+        Paragraph(f'<b>Sport / Committee:</b> {p_row["Sport_or_Committee"]}', meta_style),
+        Paragraph(f'<b>Category / Gender:</b> {p_row.get("Category","--")} ({p_row.get("Gender","--")})', meta_style),
+        Spacer(1, 10),
+        qr_draw,
+        Spacer(1, 6),
+        Paragraph(f'<b>ACCREDITATION ID: {p_row["Accreditation_ID"]}</b>', id_style),
+        Spacer(1, 8),
+        Paragraph('<i>Scannable for Venue Entry, Sports Events & Billeting Quarters</i>', ParagraphStyle('Foot', fontName='Helvetica-Oblique', fontSize=8, leading=10, textColor=DARK_GRAY, alignment=TA_CENTER))
+    ]
+    
+    card_table = Table([[card_content]], colWidths=[320])
+    card_table.setStyle(TableStyle([
+        ('BOX', (0,0), (-1,-1), 2, role_color),
+        ('BACKGROUND', (0,0), (-1,-1), LIGHT_BG),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 15),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 15),
+        ('LEFTPADDING', (0,0), (-1,-1), 15),
+        ('RIGHTPADDING', (0,0), (-1,-1), 15),
+    ]))
+    
+    story.append(card_table)
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+def make_all_accreditation_passes_pdf(df):
+    """Generates multi-page PDF batch containing 4 accreditation passes per page with vector QR Codes."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=LETTER, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
+    story = []
+    
+    NAVY = HexColor('#1E3A8A')
+    GOLD = HexColor('#F59E0B')
+    DARK_GRAY = HexColor('#374151')
+    
+    title_style = ParagraphStyle('TStyle', fontName='Helvetica-Bold', fontSize=9, leading=11, textColor=NAVY, alignment=TA_CENTER)
+    sub_style = ParagraphStyle('SStyle', fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=GOLD, alignment=TA_CENTER)
+    name_style = ParagraphStyle('NStyle', fontName='Helvetica-Bold', fontSize=11, leading=13, textColor=NAVY, alignment=TA_CENTER)
+    meta_style = ParagraphStyle('MStyle', fontName='Helvetica', fontSize=8, leading=10, textColor=DARK_GRAY, alignment=TA_CENTER)
+    id_style = ParagraphStyle('IDStyle', fontName='Helvetica-Bold', fontSize=9, leading=11, textColor=NAVY, alignment=TA_CENTER)
+    
+    table_data = []
+    row_cells = []
+    
+    for idx, p in df.iterrows():
+        qr_draw = generate_qr_drawing(p['Accreditation_ID'], size=65)
+        role_txt = str(p.get('Role','Participant')).upper()
+        
+        card_content = [
+            Paragraph('<b>DEPED VII • CVIRAA 2026</b>', title_style),
+            Paragraph(f'<b>{role_txt} PASS</b>', sub_style),
+            Spacer(1, 3),
+            Paragraph(f'<b>{p["Full_Name"]}</b>', name_style),
+            Paragraph(f'{p["Division"]}', meta_style),
+            Paragraph(f'{p["Sport_or_Committee"]}', meta_style),
+            Spacer(1, 3),
+            qr_draw,
+            Spacer(1, 2),
+            Paragraph(f'<b>ID: {p["Accreditation_ID"]}</b>', id_style)
+        ]
+        
+        card_table = Table([[card_content]], colWidths=[240])
+        card_table.setStyle(TableStyle([
+            ('BOX', (0,0), (-1,-1), 1.5, NAVY),
+            ('BACKGROUND', (0,0), (-1,-1), HexColor('#F9FAFB')),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING', (0,0), (-1,-1), 6),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ]))
+        
+        row_cells.append(card_table)
+        
+        if len(row_cells) == 2:
+            table_data.append(row_cells)
+            row_cells = []
+            
+        if len(table_data) == 2:
+            page_table = Table(table_data, colWidths=[250, 250])
+            page_table.setStyle(TableStyle([
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+            ]))
+            story.append(page_table)
+            story.append(PageBreak())
+            table_data = []
+            
+    if row_cells:
+        if len(row_cells) == 1:
+            row_cells.append('')
+        table_data.append(row_cells)
+        
+    if table_data:
+        page_table = Table(table_data, colWidths=[250, 250])
+        page_table.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+        ]))
+        story.append(page_table)
+        
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 def make_executive_summary_report_pdf(medal_df, rd_name, date_str, venue_str):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -960,25 +1137,99 @@ else:
     # TAB 8: 🏠 Billeting Tracker & Curfew
     with tab_billeting:
         st.subheader("🏠 Billeting Quarters Log-In / Log-Out Tracker & Curfew Monitor")
-        st.markdown("Track departures to playing venues and arrivals back at billeting schools.")
+        st.markdown("Track departures to playing venues and arrivals back at billeting quarters using **Mobile Phone Camera QR Scanning, Barcode Guns, or Manual Selection**.")
         
         b_df = st.session_state.billeting_df
         p_df = st.session_state.participants_df
         
-        col_b1, col_b2 = st.columns(2)
-        with col_b1:
-            st.markdown("#### 📝 Record Log-In / Log-Out Movement")
-            p_options = p_df["Full_Name"] + " (" + p_df["Accreditation_ID"] + " - " + p_df["Division"] + ")"
-            sel_p_log = st.selectbox("Select Participant", options=p_options)
-            sel_action = st.radio("Select Movement Action", ["Log OUT (Left for Venue)", "Log IN (Returned to Quarters)"], horizontal=True)
-            sel_quarter = st.selectbox("Assigned Billeting School", BILLETING_QUARTERS)
-            dest_reason = st.text_input("Destination / Reason", value="Playing Venue Match / Training")
-            officer_ic = st.text_input("Officer / Security Duty", value="Security Officer")
+        log_mode1, log_mode2, log_mode3 = st.tabs([
+            "📱 Mobile Phone Camera QR Scanner", 
+            "📟 USB / Bluetooth Scanner Gun", 
+            "📝 Manual Dropdown Input"
+        ])
+        
+        selected_participant_from_scan = None
+        
+        with log_mode1:
+            st.markdown("#### 📱 Mobile Phone & Tablet Camera QR Scanner")
+            st.caption("Point your smartphone camera at the player, coach, or TWG member's physical or digital QR Code pass:")
             
-            if st.button("💾 Submit Billeting Log Record", use_container_width=True):
-                p_idx = p_options.tolist().index(sel_p_log)
-                p_rec = p_df.iloc[p_idx]
-                
+            camera_photo = st.camera_input("📷 Snap / Scan QR Code on Accreditation Pass", key="mobile_camera_input")
+            
+            if camera_photo is not None:
+                try:
+                    file_bytes = np.asarray(bytearray(camera_photo.getvalue()), dtype=np.uint8)
+                    img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+                    
+                    detector = cv2.QRCodeDetector()
+                    decoded_id, pts, _ = detector.detectAndDecode(img)
+                    
+                    if decoded_id and decoded_id.strip():
+                        scanned_code = decoded_id.strip().upper()
+                        st.success(f"🎉 **QR CODE SCANNED SUCCESSFULLY**: `{scanned_code}`")
+                        matched_cam_p = p_df[p_df["Accreditation_ID"].str.upper() == scanned_code]
+                        if not matched_cam_p.empty:
+                            selected_participant_from_scan = matched_cam_p.iloc[0]
+                        else:
+                            st.error(f"❌ ID `{scanned_code}` scanned, but not found in registered participant database.")
+                    else:
+                        st.warning("⚠️ No QR code recognized in photo. Please center the QR pass, ensure good lighting, and hold steady.")
+                except Exception as e:
+                    st.error(f"Error reading camera frame: {e}")
+
+        with log_mode2:
+            st.markdown("#### 📟 Hardware Barcode / QR Scanner Gun")
+            st.caption("Click in the box below and scan with a USB or Bluetooth scanner gun:")
+            
+            scanned_gun_id = st.text_input("📷 Scan Barcode / QR Code", placeholder="e.g. CV26-ATH-1001", key="gun_scanner_field").strip()
+            if scanned_gun_id:
+                matched_gun_p = p_df[p_df["Accreditation_ID"].str.upper() == scanned_gun_id.upper()]
+                if not matched_gun_p.empty:
+                    selected_participant_from_scan = matched_gun_p.iloc[0]
+                else:
+                    st.error(f"❌ ID `{scanned_gun_id}` not found in database.")
+
+        with log_mode3:
+            st.markdown("#### 📝 Manual Participant Lookup")
+            p_options = p_df["Full_Name"] + " (" + p_df["Accreditation_ID"] + " - " + p_df["Division"] + ")"
+            sel_manual_str = st.selectbox("Select Participant", options=p_options, key="manual_p_select")
+            if sel_manual_str:
+                p_m_idx = p_options.tolist().index(sel_manual_str)
+                selected_participant_from_scan = p_df.iloc[p_m_idx]
+
+        st.markdown("<hr/>", unsafe_allow_html=True)
+        
+        # Display selected participant details and movement log action buttons
+        if selected_participant_from_scan is not None:
+            p_rec = selected_participant_from_scan
+            
+            st.markdown("### 👤 Participant Log Profile")
+            col_p1, col_p2 = st.columns([7, 3])
+            
+            with col_p1:
+                st.info(f"""
+                    **Full Name**: {p_rec['Full_Name']}<br/>
+                    **Accreditation ID**: `{p_rec['Accreditation_ID']}`<br/>
+                    **Role**: **{p_rec['Role']}** | **Division**: {p_rec['Division']}<br/>
+                    **Sport / Committee**: {p_rec['Sport_or_Committee']}
+                """, icon="📇")
+            
+            with col_p2:
+                svg_qr = get_qr_svg_string(p_rec['Accreditation_ID'], size=130)
+                st.markdown(f'<div style="text-align:center;background:white;padding:10px;border-radius:10px;border:1px solid #E5E7EB">{svg_qr}</div>', unsafe_allow_html=True)
+            
+            st.markdown("#### 📝 Movement Action Record")
+            col_act1, col_act2 = st.columns(2)
+            
+            with col_act1:
+                sel_action = st.radio("Select Movement Direction", ["Log IN (Returned to Quarters)", "Log OUT (Left for Venue)"], horizontal=True, key="log_action_choice")
+                sel_quarter = st.selectbox("Assigned Billeting School", BILLETING_QUARTERS, key="log_quarter_choice")
+            
+            with col_act2:
+                dest_reason = st.text_input("Destination / Sport Venue / Reason", value="Playing Venue Match / Official Task", key="log_dest_field")
+                officer_ic = st.text_input("Gate Security Officer / Chaperone Duty", value="Security Officer", key="log_officer_field")
+            
+            if st.button("💾 Submit Movement Log Entry", use_container_width=True, key="save_log_btn"):
                 new_log = {
                     "Log_ID": f"LOG-{1000 + len(b_df) + 1}",
                     "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -993,14 +1244,17 @@ else:
                 b_updated = pd.concat([b_df, pd.DataFrame([new_log])], ignore_index=True)
                 st.session_state.billeting_df = b_updated
                 save_billeting_data(b_updated)
-                st.success(f"Recorded movement for **{p_rec['Full_Name']}**: {sel_action}!")
+                
+                if "Log OUT" in sel_action:
+                    send_telegram_message(f"🚨 <b>BILLETING LOG-OUT ALERT</b>\nParticipant <b>{p_rec['Full_Name']}</b> ({p_rec['Division']}) departed from {sel_quarter} for {dest_reason} at {new_log['Timestamp']}.")
+                
+                st.success(f"✅ Logged **{p_rec['Full_Name']}**: {sel_action} at {new_log['Timestamp']}!")
                 st.rerun()
 
-        with col_b2:
-            st.markdown("#### 📊 Live Billeting Attendance Summary")
-            st.dataframe(b_df, use_container_width=True, hide_index=True)
+        st.markdown("<hr/>", unsafe_allow_html=True)
+        st.markdown("#### 📊 Billeting Attendance Log History")
+        st.dataframe(b_df, use_container_width=True, hide_index=True)
 
-    # TAB 9: 📲 Telegram/Viber Bot Center
     with tab_bot:
         st.subheader("📲 Telegram & Viber Emergency Bot Alert Center")
         st.markdown("Send instant curfew alerts and emergency broadcast notices to delegation coaches and TWG group chats.")
@@ -1040,19 +1294,87 @@ Attention Coaches: Please ensure all athletes are logged IN to their billeting q
 
     # TAB 10: 📇 Accreditation Pass Generator
     with tab_pass:
-        st.subheader("📇 Official CVIRAA Accreditation Badge Generator")
+        st.subheader("📇 Scannable QR Code Accreditation Pass Generator")
+        st.markdown("Generate and print official CVIRAA Accreditation Badges with **Scannable Vector QR Codes** for Athletes, Coaches, Chaperones, and TWG Officers.")
+        
         pdf = st.session_state.participants_df
         if pdf.empty:
-            st.warning("No participants registered yet.")
+            st.warning("No participants registered yet. Go to 'Players, Coaches & TWG' to register participants.")
         else:
-            p_list = pdf["Full_Name"] + " (" + pdf["Accreditation_ID"] + " - " + pdf["Role"] + ")"
-            p_select = st.selectbox("Select Participant to Generate Pass", options=p_list)
-            p_idx = p_list.tolist().index(p_select)
-            p_row = pdf.iloc[p_idx]
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                role_filter = st.selectbox("Filter by Role", ["All Roles", "Athlete / Player", "Coach", "Chaperone", "TWG Member"], key="pass_role_filter")
+            with col_f2:
+                div_filter = st.selectbox("Filter by Division", ["All Divisions"] + DIVISIONS, key="pass_div_filter")
             
-            st.info(f"Displaying Pass for **{p_row['Full_Name']}** ({p_row['Accreditation_ID']}) - Role: **{p_row['Role']}**")
+            filtered_pdf = pdf.copy()
+            if role_filter != "All Roles":
+                filtered_pdf = filtered_pdf[filtered_pdf["Role"] == role_filter]
+            if div_filter != "All Divisions":
+                filtered_pdf = filtered_pdf[filtered_pdf["Division"] == div_filter]
+            
+            if filtered_pdf.empty:
+                st.warning("No participants match the selected filters.")
+            else:
+                p_list = filtered_pdf["Full_Name"] + " (" + filtered_pdf["Accreditation_ID"] + " - " + filtered_pdf["Role"] + ")"
+                p_select = st.selectbox("Select Participant to Display Pass", options=p_list, key="pass_p_select")
+                p_idx = p_list.tolist().index(p_select)
+                p_row = filtered_pdf.iloc[p_idx]
+                
+                st.markdown("<hr/>", unsafe_allow_html=True)
+                
+                col_c1, col_c2 = st.columns([6, 4])
+                
+                with col_c1:
+                    role_str = str(p_row['Role']).upper()
+                    badge_bg = "#1E3A8A" # Navy
+                    if "COACH" in role_str: badge_bg = "#059669" # Emerald Green
+                    elif "CHAPERONE" in role_str: badge_bg = "#7C3AED" # Purple
+                    elif "TWG" in role_str: badge_bg = "#D97706" # Amber Gold
+                    
+                    st.markdown(f"""
+                        <div style="border:3px solid {badge_bg};border-radius:15px;background-color:#FFFFFF;padding:20px;text-align:center;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1);max-width:400px;margin:auto;">
+                            <div style="background-color:{badge_bg};color:white;padding:10px;border-radius:10px 10px 0 0;margin:-20px -20px 15px -20px;">
+                                <h3 style="margin:0;color:#F59E0B;font-size:1.1rem;">🏅 DEPED VII • CVIRAA 2026</h3>
+                                <p style="margin:2px 0 0 0;font-size:0.8rem;letter-spacing:1px;font-weight:bold;">OFFICIAL {role_str} PASS</p>
+                            </div>
+                            <h2 style="color:#1E3A8A;margin:10px 0 5px 0;font-size:1.5rem;font-weight:900;">{p_row['Full_Name']}</h2>
+                            <p style="color:#4B5563;margin:0 0 10px 0;font-size:1rem;font-weight:600;"><b>Division:</b> {p_row['Division']}</p>
+                            <p style="color:#6B7280;margin:0 0 15px 0;font-size:0.9rem;"><b>Sport / Committee:</b> {p_row['Sport_or_Committee']}</p>
+                            <div style="background-color:#F3F4F6;padding:10px;border-radius:10px;margin-bottom:15px;display:inline-block;">
+                                {get_qr_svg_string(p_row['Accreditation_ID'], size=160)}
+                            </div>
+                            <div style="background-color:#1E3A8A;color:white;padding:6px 12px;border-radius:20px;font-weight:bold;font-size:0.9rem;display:inline-block;">
+                                ID: {p_row['Accreditation_ID']}
+                            </div>
+                            <p style="color:#9CA3AF;margin:12px 0 0 0;font-size:0.75rem;"><i>Scannable with Smartphone Camera or Gate Scanner</i></p>
+                        </div>
+                    """, unsafe_allow_html=True)
+                
+                with col_c2:
+                    st.markdown("#### 📄 Printable PDF Downloads")
+                    st.caption("Download official print-ready PDF accreditation badges complete with scannable vector QR codes:")
+                    
+                    ind_pass_pdf = make_single_accreditation_pass_pdf(p_row)
+                    st.download_button(
+                        label=f"📄 Download Pass PDF for {p_row['Full_Name']}",
+                        data=ind_pass_pdf,
+                        file_name=f"Pass_{p_row['Accreditation_ID']}_{p_row['Full_Name'].replace(' ','_')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+                    
+                    st.markdown("---")
+                    
+                    all_pass_pdf = make_all_accreditation_passes_pdf(filtered_pdf)
+                    st.download_button(
+                        label=f"📄 Download All {len(filtered_pdf)} Passes with QR Codes (Batch PDF)",
+                        data=all_pass_pdf,
+                        file_name="CVIRAA_All_Accreditation_Passes_QR.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
 
-    # TAB 11: 📜 Award Certificates
     with tab_cert:
         st.subheader("📜 Dynamic PDF Certificate Generator")
         cert_div = st.selectbox("Select Winning Schools Division", DIVISIONS, key="cert_div")
