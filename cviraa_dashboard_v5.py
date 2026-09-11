@@ -10,11 +10,11 @@ import requests
 import json
 import urllib.parse
 from datetime import datetime
-from reportlab.lib.pagesizes import LETTER, landscape
+from reportlab.lib.pagesizes import LETTER, portrait, landscape
 from reportlab.lib.colors import HexColor
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.pdfbase import pdfmetrics
 
 # Set page configuration
