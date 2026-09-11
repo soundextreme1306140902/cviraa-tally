@@ -1,3 +1,5 @@
 pandas
 plotly
 reportlab
+opencv-python-headless
+requests
