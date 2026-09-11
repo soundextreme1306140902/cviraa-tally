@@ -635,6 +635,22 @@ def make_executive_summary_report_pdf(medal_df, rd_name, date_str, venue_str):
 
 
 # Initialize session state variables
+
+# Extract query parameters for direct smartphone camera QR scanning
+scanned_url_id = ""
+try:
+    if hasattr(st, "query_params"):
+        scanned_url_id = st.query_params.get("id", "")
+    elif hasattr(st, "experimental_get_query_params"):
+        qp = st.experimental_get_query_params()
+        if "id" in qp and qp["id"]:
+            scanned_url_id = qp["id"][0]
+    if isinstance(scanned_url_id, list):
+        scanned_url_id = scanned_url_id[0] if scanned_url_id else ""
+    scanned_url_id = str(scanned_url_id).strip()
+except Exception:
+    scanned_url_id = ""
+
 if 'medal_df' not in st.session_state:
     st.session_state.medal_df = load_medal_data()
 
