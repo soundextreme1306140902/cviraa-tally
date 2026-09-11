@@ -1240,11 +1240,12 @@ else:
 
         with log_mode3:
             st.markdown("#### 📝 Manual Participant Lookup")
-            p_options = p_df["Full_Name"] + " (" + p_df["Accreditation_ID"] + " - " + p_df["Division"] + ")"
-            sel_manual_str = st.selectbox("Select Participant", options=p_options, key="manual_p_select")
-            if sel_manual_str:
-                p_m_idx = p_options.tolist().index(sel_manual_str)
-                selected_participant_from_scan = p_df.iloc[p_m_idx]
+            p_options_list = ["-- Select Participant --"] + (p_df["Full_Name"] + " (" + p_df["Accreditation_ID"] + " - " + p_df["Division"] + ")").tolist()
+            sel_manual_str = st.selectbox("Select Participant", options=p_options_list, key="manual_p_select")
+            if sel_manual_str and sel_manual_str != "-- Select Participant --":
+                if selected_participant_from_scan is None:
+                    p_m_idx = p_options_list.index(sel_manual_str) - 1
+                    selected_participant_from_scan = p_df.iloc[p_m_idx]
 
         st.markdown("<hr/>", unsafe_allow_html=True)
         
