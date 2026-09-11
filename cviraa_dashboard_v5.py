@@ -9,7 +9,12 @@ import time
 import requests
 import json
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+MANILA_TZ = timezone(timedelta(hours=8))
+
+def get_manila_now():
+    return datetime.now(MANILA_TZ)
 from reportlab.lib.pagesizes import LETTER, portrait, landscape
 from reportlab.lib.colors import HexColor
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -998,7 +1003,7 @@ else:
         rep_col1, rep_col2 = st.columns(2)
         with rep_col1:
             rep_rd = st.text_input("Regional Director Name", value="SALUSTIANO T. JIMENEZ, EdD, JD, CESO V")
-            rep_date = st.text_input("Report Date", value=datetime.now().strftime("%B %d, 2026"))
+            rep_date = st.text_input("Report Date", value=get_manila_now().strftime("%B %d, 2026"))
         with rep_col2:
             rep_venue = st.text_input("Host City / Location Detail", value="City of Naga, Cebu")
             
@@ -1253,7 +1258,7 @@ else:
             if st.button("💾 Submit Movement Log Entry", use_container_width=True, key="save_log_btn"):
                 new_log = {
                     "Log_ID": f"LOG-{1000 + len(b_df) + 1}",
-                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "Timestamp": get_manila_now().strftime("%Y-%m-%d %H:%M:%S"),
                     "Accreditation_ID": p_rec["Accreditation_ID"],
                     "Full_Name": p_rec["Full_Name"],
                     "Division": p_rec["Division"],
