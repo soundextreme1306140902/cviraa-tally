@@ -1171,9 +1171,10 @@ else:
         
         with log_mode1:
             st.markdown("#### 📱 Mobile Phone & Tablet Camera QR Scanner")
-            st.caption("Point your smartphone camera at the player, coach, or TWG member's physical or digital QR Code pass:")
+            st.info("📸 **Camera Setup**: When your camera activates, tap the **Switch Camera icon (🔄)** on your screen to switch to your phone's **Rear / Back Camera** for quick scanning!")
+            st.caption("Point your smartphone's back camera at the player, coach, or TWG member's QR Code pass:")
             
-            camera_photo = st.camera_input("📷 Snap / Scan QR Code on Accreditation Pass", key="mobile_camera_input")
+            camera_photo = st.camera_input("📷 Snap / Scan QR Code on Accreditation Pass (Use Back Camera 🔄)", key="mobile_camera_input")
             
             if camera_photo is not None:
                 try:
