@@ -338,7 +338,7 @@ def make_executive_summary_report_pdf(medal_df, rd_name, date_str, venue_str):
     h2_style = ParagraphStyle('RH2', fontName='Helvetica-Bold', fontSize=12, leading=16, textColor=NAVY, spaceBefore=10, spaceAfter=6)
     body_style = ParagraphStyle('RBody', fontName='Helvetica', fontSize=9, leading=12, textColor=DARK_GRAY)
     
-    tally = calculate_ranking(medal_df, sort_by_gold_first=True)
+    tally = calculate_ranking(medal_df, "Olympic Standard (Gold First)")
     total_g = tally["Gold"].sum()
     total_s = tally["Silver"].sum()
     total_b = tally["Bronze"].sum()
@@ -578,7 +578,7 @@ else:
         st.subheader("🛡️ Admin Console")
         
         if not st.session_state.authenticated:
-            pwd_input = st.text_input("Enter Admin Password", type="password")
+            pwd_input = st.text_input("Enter Admin Password (cviraa2026)", type="password")
             if st.button("Unlock Admin Features", use_container_width=True):
                 if pwd_input == ADMIN_PASSWORD:
                     st.session_state.authenticated = True
@@ -624,13 +624,37 @@ else:
                         st.success(f"Updated {selected_sport} for {selected_div} successfully!")
                         st.rerun()
 
-            with st.expander("📂 Backup & Restore"):
-                csv_data = st.session_state.medal_df.to_csv(index=False)
-                st.download_button("📥 Download Medals CSV", data=csv_data, file_name="cviraa_medals.csv", mime="text/csv", use_container_width=True)
-                p_csv_data = st.session_state.participants_df.to_csv(index=False)
-                st.download_button("📥 Download Participants CSV", data=p_csv_data, file_name="cviraa_participants.csv", mime="text/csv", use_container_width=True)
+        st.markdown("---")
+        with st.expander("📥 Import & Export Data", expanded=True):
+            st.markdown("##### 📂 Upload / Restore CSV Data")
+            uploaded_csv = st.file_uploader("Upload CSV File (e.g. cviraa_mock_data_v3.csv)", type=["csv"], key="sidebar_csv_import")
+            if uploaded_csv is not None:
+                try:
+                    u_df = pd.read_csv(uploaded_csv)
+                    if {"Division", "Category", "Sport", "Gold", "Silver", "Bronze"}.issubset(u_df.columns):
+                        st.session_state.medal_df = u_df
+                        save_medal_data(u_df)
+                        st.success("✅ Medal Database successfully imported!")
+                        st.rerun()
+                    elif {"Accreditation_ID", "Full_Name"}.issubset(u_df.columns):
+                        st.session_state.participants_df = u_df
+                        save_participants_data(u_df)
+                        st.success("✅ Participant Roster successfully imported!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Invalid CSV format. Missing required columns.")
+                except Exception as e:
+                    st.error(f"Error reading CSV: {e}")
+            
+            st.markdown("---")
+            st.markdown("##### 📥 Export / Download CSVs")
+            csv_data = st.session_state.medal_df.to_csv(index=False)
+            st.download_button("📥 Download Medals CSV", data=csv_data, file_name="cviraa_medals.csv", mime="text/csv", use_container_width=True)
+            p_csv_data = st.session_state.participants_df.to_csv(index=False)
+            st.download_button("📥 Download Participants CSV", data=p_csv_data, file_name="cviraa_participants.csv", mime="text/csv", use_container_width=True)
 
-            with st.expander("⚠️ Reset Database"):
+        if st.session_state.authenticated:
+            with st.expander("⚠️ Danger Zone"):
                 if st.button("🔄 Reset Medals to Zero", use_container_width=True):
                     df = st.session_state.medal_df.copy()
                     df["Gold"] = 0; df["Silver"] = 0; df["Bronze"] = 0
@@ -741,8 +765,8 @@ else:
         ind_df = st.session_state.medal_df[st.session_state.medal_df["Sport"].isin(INDIVIDUAL_SPORTS)]
         team_df = st.session_state.medal_df[st.session_state.medal_df["Sport"].isin(TEAM_SPORTS)]
         
-        ind_tally = calculate_ranking(ind_df, sort_by_gold_first=sort_by_gold)
-        team_tally = calculate_ranking(team_df, sort_by_gold_first=sort_by_gold)
+        ind_tally = calculate_ranking(ind_df, sort_preference)
+        team_tally = calculate_ranking(team_df, sort_preference)
         
         col_an1, col_an2 = st.columns(2)
         with col_an1:
